@@ -1,0 +1,140 @@
+import pandas as pd
+import networkx as nx
+
+def calculate_distance_matrix(df):
+    # Assuming you have already loaded the dataset-3.csv into a DataFrame named df
+
+    # Create a directed graph
+    G = nx.DiGraph()
+
+    # Add edges with distances to the graph
+    for _, row in df.iterrows():
+        G.add_edge(row['source'], row['destination'], distance=row['distance'])
+
+    # Calculate shortest path lengths between all pairs of nodes
+    distance_matrix = nx.floyd_warshall_numpy(G)
+
+    # Ensure the matrix is symmetric
+    distance_matrix = (distance_matrix + distance_matrix.T) / 2
+
+    # Set diagonal values to 0
+    for i in range(len(distance_matrix)):
+        distance_matrix[i, i] = 0
+
+    # Create a DataFrame from the numpy array
+    distance_df = pd.DataFrame(distance_matrix, index=G.nodes, columns=G.nodes)
+
+    return distance_df
+
+
+
+import pandas as pd
+
+def unroll_distance_matrix(distance_df):
+    # Assuming you have the distance DataFrame from Question 1
+
+    # Extract the column and index names
+    column_names = distance_df.columns
+    index_names = distance_df.index
+
+    # Create an empty DataFrame to store the unrolled distances
+    unrolled_df = pd.DataFrame(columns=['id_start', 'id_end', 'distance'])
+
+    # Iterate over each combination of id_start and id_end
+    for id_start in index_names:
+        for id_end in column_names:
+            # Exclude combinations where id_start is equal to id_end
+            if id_start != id_end:
+                distance = distance_df.loc[id_start, id_end]
+                unrolled_df = unrolled_df.append({'id_start': id_start, 'id_end': id_end, 'distance': distance}, ignore_index=True)
+
+    return unrolled_df
+
+
+
+import pandas as pd
+
+def find_ids_within_ten_percentage_threshold(distance_df, reference_value):
+    # Assuming you have the unrolled distance DataFrame from Question 2
+
+    # Filter rows based on the reference value
+    reference_rows = distance_df[distance_df['id_start'] == reference_value]
+
+    # Calculate the average distance for the reference value
+    reference_avg_distance = reference_rows['distance'].mean()
+
+    # Calculate the lower and upper bounds for the 10% threshold
+    lower_bound = reference_avg_distance - (0.1 * reference_avg_distance)
+    upper_bound = reference_avg_distance + (0.1 * reference_avg_distance)
+
+    # Filter rows within the 10% threshold
+    within_threshold = distance_df[(distance_df['distance'] >= lower_bound) & (distance_df['distance'] <= upper_bound)]
+
+    # Get unique values from the id_start column and sort them
+    sorted_ids_within_threshold = within_threshold['id_start'].unique()
+    sorted_ids_within_threshold.sort()
+
+    return sorted_ids_within_threshold.tolist()
+
+
+
+import pandas as pd
+
+def calculate_toll_rate(input_df):
+    # Assuming you have the unrolled distance DataFrame from Question 2
+
+    # Add columns for toll rates
+    input_df['moto'] = input_df['distance'] * 0.8
+    input_df['car'] = input_df['distance'] * 1.2
+    input_df['rv'] = input_df['distance'] * 1.5
+    input_df['bus'] = input_df['distance'] * 2.2
+    input_df['truck'] = input_df['distance'] * 3.6
+
+    return input_df
+
+
+import pandas as pd
+import numpy as np
+
+def calculate_time_based_toll_rates(input_df):
+    # Assuming you have the DataFrame from Question 3
+
+    # Create a DataFrame with the time ranges and corresponding discount factors
+    time_ranges = [(pd.to_datetime('00:00:00').time(), pd.to_datetime('10:00:00').time(), 0.8),
+                   (pd.to_datetime('10:00:00').time(), pd.to_datetime('18:00:00').time(), 1.2),
+                   (pd.to_datetime('18:00:00').time(), pd.to_datetime('23:59:59').time(), 0.8)]
+
+    # Create a dictionary to map days of the week to their proper case strings
+    days_mapping = {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday', 4: 'Friday', 5: 'Saturday', 6: 'Sunday'}
+
+    # Initialize new columns for start_day, start_time, end_day, and end_time
+    input_df['start_day'] = ''
+    input_df['start_time'] = np.nan
+    input_df['end_day'] = ''
+    input_df['end_time'] = np.nan
+
+    # Iterate through each time range and apply discount factors
+    for start, end, discount_factor in time_ranges:
+        # Create a mask for weekdays and weekends
+        weekdays_mask = (input_df['start_timestamp'].dt.dayofweek < 5)
+        weekends_mask = ~weekdays_mask
+
+        # Apply discount factors based on time ranges
+        input_df.loc[(weekdays_mask & (input_df['start_timestamp'].dt.time >= start) & (input_df['start_timestamp'].dt.time < end)),
+                     ['car', 'rv', 'bus', 'truck']] *= discount_factor
+        input_df.loc[(weekends_mask),
+                     ['car', 'rv', 'bus', 'truck']] *= 0.7
+
+        # Update start_day, start_time, end_day, and end_time columns
+        input_df.loc[(weekdays_mask & (input_df['start_timestamp'].dt.time >= start) & (input_df['start_timestamp'].dt.time < end)),
+                     ['start_day', 'end_day']] = days_mapping[input_df['start_timestamp'].dt.dayofweek]
+        input_df.loc[(weekends_mask),
+                     ['start_day', 'end_day']] = days_mapping[input_df['start_timestamp'].dt.dayofweek]
+        input_df.loc[(weekdays_mask & (input_df['start_timestamp'].dt.time >= start)),
+                     'start_time'] = start
+        input_df.loc[(weekdays_mask & (input_df['start_timestamp'].dt.time < end)),
+                     'end_time'] = end
+        input_df.loc[(weekends_mask),
+                     ['start_time', 'end_time']] = pd.to_datetime('00:00:00').time()
+
+    return input_df
